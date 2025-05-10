@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Device‐Tilt Letter Scaling</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; color: #fff; }
+    #motionBtn { position: absolute; top: 20px; left: 20px; z-index: 10; }
+  </style>
+</head>
+<body>
+  <button id="motionBtn">Enable Motion Effects</button>
+  <script>
+    let letters = ["i", "c", "z", "b", "g", "v"];
+    
+    // ——— Motion / Permission Logic ———
+    let permissionGranted = false;
+    const deadZone        = 1;    // ignore tiny tilts
+    const smoothingFactor = 0.15; // low‐pass filter
+    let lastScaleFactorY  = 1;    // start at no scale
+    let lastUpdateTime    = 0;
+    const updateInterval  = 50;   // ms between updates
+
+    function requestMotionPermission() {
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then(response => {
+            if (response === 'granted') {
+              permissionGranted = true;
+              document.getElementById('motionBtn').style.display = 'none';
+              window.addEventListener('deviceorientation', handleOrientation);
+            } else {
+              console.warn('Motion permission denied');
+            }
+          })
+          .catch(err => console.error('Permission error:', err));
+      } else {
+        // no permission API (older Android, etc.)
+        permissionGranted = true;
+        document.getElementById('motionBtn').style.display = 'none';
+        window.addEventListener('deviceorientation', handleOrientation);
+      }
+    }
+
+    function handleOrientation(event) {
+      if (!permissionGranted) return;
+      const tiltX = event.beta;  // front‐to‐back tilt
+
+      if (Math.abs(tiltX) < deadZone) return;
+      const now = Date.now();
+      if (now - lastUpdateTime < updateInterval) return;
+      lastUpdateTime = now;
+
+      // compute raw scale
+      let rawScaleY = tiltX > 0
+        ? 1 - tiltX/100    // compress on upward tilt
+        : 1 + (-tiltX/10); // stretch on downward tilt
+
+      // clamp extremes
+      rawScaleY = Math.min(Math.max(rawScaleY, 0.1), 13);
+
+      // smooth
+      lastScaleFactorY += smoothingFactor * (rawScaleY - lastScaleFactorY);
+    }
+    // ——————————————————————————————
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      textSize(128);
+      textAlign(CENTER, CENTER);
+      fill(255);
+      noStroke();
+      textLeading(textSize() * 0.8);
+
+      // wire up the button
+      const btn = select('#motionBtn');
+      btn.mousePressed(requestMotionPermission);
+    }
+
+    function draw() {
+      background(0);
+
+      // use the tilt‐based scale factor
+      const w = lastScaleFactorY;
+
+      push();
+        translate(width/2, height/2);
+        scale(w, 1);
+
+        for (let i = 0; i < letters.length; i++) {
+          let y = (i - (letters.length - 1) / 2) * textLeading();
+          text(letters[i], 0, y);
+        }
+      pop();
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+    }
+  </script>
+</body>
+</html>
