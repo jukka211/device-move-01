@@ -12,55 +12,62 @@
 <body>
   <button id="motionBtn">Enable Motion Effects</button>
   <script>
+   // ——— Your Letters ———
     let letters = ["i", "c", "z", "b", "g", "v"];
-    
+
     // ——— Motion / Permission Logic ———
     let permissionGranted = false;
-    const deadZone        = 1;    // ignore tiny tilts
-    const smoothingFactor = 0.15; // low‐pass filter
-    let lastScaleFactorY  = 1;    // start at no scale
-    let lastUpdateTime    = 0;
-    const updateInterval  = 50;   // ms between updates
+    const deadZone        = 1;     // ignore tiny tilts
+    const smoothingFactor = 0.15;  // low‐pass filter constant
+    const updateInterval  = 50;    // ms between updates
+    const maxTilt         = 45;    // tilt (in degrees) maps fully to collapse
 
+    // 1) Start fully “zoomed out” at 13×
+    let lastScaleFactorY = 13;
+    let lastUpdateTime   = 0;
+
+    // Button → permission request
     function requestMotionPermission() {
       if (typeof DeviceOrientationEvent.requestPermission === 'function') {
         DeviceOrientationEvent.requestPermission()
           .then(response => {
             if (response === 'granted') {
-              permissionGranted = true;
-              document.getElementById('motionBtn').style.display = 'none';
-              window.addEventListener('deviceorientation', handleOrientation);
+              enableMotion();
             } else {
               console.warn('Motion permission denied');
             }
           })
           .catch(err => console.error('Permission error:', err));
       } else {
-        // no permission API (older Android, etc.)
-        permissionGranted = true;
-        document.getElementById('motionBtn').style.display = 'none';
-        window.addEventListener('deviceorientation', handleOrientation);
+        // No permission API
+        enableMotion();
       }
     }
 
+    function enableMotion() {
+      permissionGranted = true;
+      document.getElementById('motionBtn').style.display = 'none';
+      window.addEventListener('deviceorientation', handleOrientation);
+    }
+
+    // Handle left/right tilt to collapse from 13→0.2
     function handleOrientation(event) {
       if (!permissionGranted) return;
-      const tiltX = event.beta;  // front‐to‐back tilt
+      const tiltLR = event.gamma;  // negative = left, positive = right
 
-      if (Math.abs(tiltX) < deadZone) return;
+      if (Math.abs(tiltLR) < deadZone) return;
       const now = Date.now();
       if (now - lastUpdateTime < updateInterval) return;
       lastUpdateTime = now;
 
-      // compute raw scale
-      let rawScaleY = tiltX > 0
-        ? 1 - tiltX/100    // compress on upward tilt
-        : 1 + (-tiltX/10); // stretch on downward tilt
+      // Normalize |tilt| to [0,1] based on maxTilt
+      const t = Math.min(Math.abs(tiltLR), maxTilt) / maxTilt;
 
-      // clamp extremes
-      rawScaleY = Math.min(Math.max(rawScaleY, 0.1), 13);
+      // Interpolate: 0 → 13, 1 → 0.2
+      let rawScaleY = 13 - t * (13 - 0.2);
 
-      // smooth
+      // Clamp and smooth
+      rawScaleY = Math.min(Math.max(rawScaleY, 0.2), 13);
       lastScaleFactorY += smoothingFactor * (rawScaleY - lastScaleFactorY);
     }
     // ——————————————————————————————
@@ -73,21 +80,19 @@
       noStroke();
       textLeading(textSize() * 0.8);
 
-      // wire up the button
-      const btn = select('#motionBtn');
-      btn.mousePressed(requestMotionPermission);
+      // Wire up the permission button
+      select('#motionBtn').mousePressed(requestMotionPermission);
     }
 
     function draw() {
       background(0);
 
-      // use the tilt‐based scale factor
-      const w = lastScaleFactorY;
-
+      // Apply the current smoothed Y‐scale
       push();
         translate(width/2, height/2);
-        scale(w, 1);
+        scale(lastScaleFactorY, 1);
 
+        // Draw the column of letters
         for (let i = 0; i < letters.length; i++) {
           let y = (i - (letters.length - 1) / 2) * textLeading();
           text(letters[i], 0, y);
