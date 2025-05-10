@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>One-Sided Device-Tilt Scaling</title>
+  <title>One-Sided Tilt but Centered</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
   <style>
     body { margin: 0; overflow: hidden; background: #000; color: #fff; }
@@ -19,70 +19,59 @@
 <body>
   <button id="motionBtn">Enable Motion Effects</button>
   <script>
-    // ——— Your Letters ———
-    let letters = ["i", "c", "z", "b", "g", "v"];
-    
-    // we’ll measure the widest letter so we know our “word half-width”:
+    let letters = ["i","c","z","b","g","v"];
     let halfWordWidth = 0;
 
-    // ——— Motion / Permission Logic ———
-    let permissionGranted   = false;
-    const deadZone          = 1;
-    const smoothingFactor   = 0.15;
-    const updateInterval    = 50;
-    const maxTilt           = 45;
-    let lastScaleFactorX    = 13;   // start fully “zoomed out” at 13×
-    let lastUpdateTime      = 0;
-    let lastTiltLR          = 0;
+    // — Motion / Permission Logic —
+    let permissionGranted = false;
+    const deadZone       = 1,
+          smoothingFactor= 0.15,
+          updateInterval = 50,
+          maxTilt        = 45;
+    let lastScaleX      = 13,   // start “zoomed out”
+        lastTiltLR      = 0,
+        lastUpdateTime  = 0;
 
     function requestMotionPermission() {
       if (typeof DeviceOrientationEvent.requestPermission === 'function') {
         DeviceOrientationEvent.requestPermission()
-          .then(res => res === 'granted' ? enableMotion() : console.warn('Denied'))
-          .catch(err => console.error(err));
-      } else {
-        enableMotion();
-      }
+          .then(r => r==='granted' ? enableMotion() : console.warn('denied'))
+          .catch(console.error);
+      } else enableMotion();
     }
-
     function enableMotion() {
       permissionGranted = true;
       select('#motionBtn').hide();
       window.addEventListener('deviceorientation', handleOrientation);
     }
 
-    function handleOrientation(event) {
+    function handleOrientation(evt) {
       if (!permissionGranted) return;
-      const tiltLR = event.gamma;  // left(−) ↔ right(+)
-
-      if (Math.abs(tiltLR) < deadZone) return;
+      const tilt = evt.gamma;
+      if (Math.abs(tilt) < deadZone) return;
       const now = Date.now();
       if (now - lastUpdateTime < updateInterval) return;
       lastUpdateTime = now;
+      lastTiltLR = tilt;
 
-      lastTiltLR = tiltLR;
-
-      // normalize and map 0→13 down to 0.2
-      const t = Math.min(Math.abs(tiltLR), maxTilt) / maxTilt;
-      let rawScaleX = 13 - t * (13 - 0.2);
-      rawScaleX = constrain(rawScaleX, 0.2, 13);
-
-      lastScaleFactorX += smoothingFactor * (rawScaleX - lastScaleFactorX);
+      // t ∈ [0..1] from no-tilt → maxTilt
+      let t = Math.min(Math.abs(tilt), maxTilt) / maxTilt;
+      // scale ∈ [13 → 0.2]
+      let raw = 13 - t * (13 - 0.2);
+      raw = constrain(raw, 0.2, 13);
+      lastScaleX += smoothingFactor * (raw - lastScaleX);
     }
-    // ————————————————————————————
+    // ——————————————————
 
     function setup() {
       createCanvas(windowWidth, windowHeight);
       textSize(128);
       textAlign(CENTER, CENTER);
-      noStroke();
-      fill(255);
-      textLeading(textSize() * 0.8);
+      fill(255); noStroke();
+      textLeading(textSize()*0.8);
 
-      // measure the widest letter
-      for (let l of letters) {
-        halfWordWidth = max(halfWordWidth, textWidth(l));
-      }
+      // measure half the max letter-width once
+      for (let L of letters) halfWordWidth = max(halfWordWidth, textWidth(L));
       halfWordWidth /= 2;
 
       select('#motionBtn').mousePressed(requestMotionPermission);
@@ -91,32 +80,33 @@
     function draw() {
       background(0);
 
-      // choose anchor side based on last tilt direction
-      // if tilting right → anchor at left edge  (x = −halfWordWidth)
-      // if tilting left  → anchor at right edge (x = +halfWordWidth)
-      const anchorX = lastTiltLR > 0 ? -halfWordWidth : halfWordWidth;
+      // decide which edge to pivot on:
+      //  right-tilt → pivot LEFT edge  (anchorX = -halfWidth)
+      //  left-tilt  → pivot RIGHT edge (anchorX = +halfWidth)
+      let anchorX = lastTiltLR > 0 ? -halfWordWidth : halfWordWidth;
+
+      // compute a shift so the *center* stays at x=0:
+      // dx = −anchorX * (1 − scale)
+      let dx = -anchorX * (1 - lastScaleX);
 
       push();
-        translate(width/2, height/2);
+        // move to canvas center + small recenter shift
+        translate(width/2 + dx, height/2);
 
-        // move origin to the anchor edge:
+        // pivot:
         translate(anchorX, 0);
-
-        // apply the one-sided scale:
-        scale(lastScaleFactorX, 1);
-
-        // move back so letters draw centered around word center:
+        scale(lastScaleX, 1);
         translate(-anchorX, 0);
 
-        // draw column of letters at x=0
+        // draw the vertical column
         for (let i = 0; i < letters.length; i++) {
-          let y = (i - (letters.length - 1) / 2) * textLeading();
+          let y = (i - (letters.length - 1)/2) * textLeading();
           text(letters[i], 0, y);
         }
       pop();
     }
 
-    function windowResized() {
+    function windowResized(){
       resizeCanvas(windowWidth, windowHeight);
     }
   </script>
